@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PokéImpostor Online</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+:root{--bg:#10172a;--panel:#1b2540;--panel2:#253354;--text:#f4f7ff;--muted:#aab7d4;--yellow:#ffcb05;--green:#35d39a;--red:#ff647c}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#263d70 0,#10172a 52%,#0b1020 100%);color:var(--text);font-family:system-ui,Segoe UI,Arial,sans-serif;min-height:100vh}
+header{text-align:center;padding:24px 14px 12px}h1{font-size:clamp(2rem,5vw,3rem);margin:0}h1 span{color:var(--yellow)}header p{color:var(--muted);margin:8px auto;max-width:720px}
+.wrap{max-width:1250px;margin:auto;padding:12px 16px 32px}.panel{background:#1b2540f2;border:1px solid #344466;border-radius:18px;padding:16px;box-shadow:0 14px 40px #0002;margin-bottom:14px}.hidden{display:none!important}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.row>*{flex:1}.lobby{max-width:700px;margin:20px auto}.input{background:#111a30;border:1px solid #465a80;border-radius:11px;padding:12px;color:white;font:inherit;min-width:0;width:100%}button{font:inherit;font-weight:750;border:0;border-radius:11px;padding:11px 14px;cursor:pointer;transition:.15s}button:hover{filter:brightness(1.08);transform:translateY(-1px)}button:disabled{opacity:.4;cursor:not-allowed;transform:none}.primary{background:var(--yellow);color:#1b2437}.secondary{background:#2a3b60;color:white;border:1px solid #4a6088}.danger{background:#53283c;color:#ffdce4}.muted{color:var(--muted);font-size:.9rem;line-height:1.5}.notice{background:#111a30;border:1px solid #354567;border-radius:12px;padding:12px;margin:12px 0;line-height:1.45}.good{border-color:#2b9976}.bad{border-color:#a54a61}.gamegrid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}.cards{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}.card{background:linear-gradient(150deg,#29395d,#1c2946);border:2px solid #3b5078;border-radius:13px;padding:7px 4px;text-align:center;cursor:pointer;min-width:0;color:white}.card:hover{border-color:var(--yellow)}.card img{width:100%;max-width:100px;aspect-ratio:1;object-fit:contain;display:block;margin:auto}.card .name{font-size:.78rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize}.card .num{font-size:.68rem;color:#aab7d4}.card .types{font-size:.58rem;color:#e8edff;margin-top:4px}.card.eliminated{opacity:.22;filter:grayscale(1);border-style:dashed}.card.selected{border-color:var(--yellow);box-shadow:0 0 0 2px #ffcb0540}.card.secret{border-color:var(--green)}h2{font-size:1.1rem;margin:0 0 12px}.questions{display:grid;gap:7px}.questions button{text-align:left;background:#263556;color:white;border:1px solid #3b5078;font-size:.86rem;padding:9px}.questions button:disabled{opacity:.35}.players{display:flex;gap:8px;flex-wrap:wrap}.player{flex:1;background:#111a30;border:1px solid #354567;border-radius:11px;padding:10px}.player.active{border-color:var(--yellow)}.chatlog{height:145px;overflow:auto;background:#111a30;border:1px solid #354567;border-radius:10px;padding:9px;font-size:.84rem;margin-bottom:8px}.chatline{margin:4px 0;overflow-wrap:anywhere}.chatline b{color:var(--yellow)}.sectiontitle{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px}.sectiontitle h2{margin:0}.smallbtn{padding:7px 10px;font-size:.8rem}.badge{display:inline-block;background:#33486e;border-radius:999px;padding:5px 9px;font-size:.78rem;color:#dbe6ff}.footer{text-align:center;color:#8494b7;font-size:.78rem;margin-top:18px}
+@media(max-width:950px){.gamegrid{grid-template-columns:1fr}.cards{grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media(max-width:600px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.panel{padding:12px}.row>*{flex-basis:100%}}
+</style>
+</head>
+<body>
+<header><h1>⚡ Poké<span>Impostor Online</span></h1><p>Elegí tu Pokémon secreto, hacé preguntas y descubrí el del rival. ¡Jugá con amigos o buscá contrincantes!</p></header>
+<main class="wrap">
+<section id="lobby" class="panel lobby">
+<h2>🎮 Entrar a una partida</h2>
+<label class="muted" for="playerName">Tu nombre de entrenador</label><input id="playerName" class="input" maxlength="20" placeholder="Ej. Ash" value="Entrenador">
+<div class="row" style="margin-top:12px"><button id="create" class="primary">🔐 Crear sala privada</button><button id="find" class="secondary">🌍 Buscar partida pública</button></div>
+<div id="queueNotice" class="notice hidden"></div>
+<div class="row" style="margin-top:12px"><input id="roomCode" class="input" maxlength="6" placeholder="Código de sala"><button id="join" class="secondary">Unirme con código</button></div>
+<p class="muted">Sala privada: compartí el código con tu amigo. Partida pública: el juego te empareja con otra persona que esté buscando rival.</p>
+</section>
+<section id="game" class="hidden">
+<div class="panel">
+<div class="sectiontitle"><h2>🧭 Sala <span id="codeLabel" class="badge"></span></h2><button id="copyCode" class="secondary smallbtn">📋 Copiar código</button></div>
+<div id="players" class="players"></div><div id="notice" class="notice">Conectando…</div>
+<div id="secretPicker" class="hidden"><h2>🎭 Elegí tu Pokémon secreto</h2><p class="muted">Solo vos podés ver tu selección. No se la muestres al rival.</p><div id="secretGrid" class="cards"></div><div class="row" style="margin-top:10px"><button id="confirmSecret" class="primary" disabled>Confirmar Pokémon secreto</button></div></div>
+</div>
+<div class="gamegrid">
+<section class="panel"><div class="sectiontitle"><h2>📋 Tu tablero de descarte</h2><span id="remaining" class="badge">— candidatos</span></div><p class="muted">Tocá una tarjeta para descartarla o recuperarla. Elegí una tarjeta y usá “Intentar adivinar” cuando sea tu turno.</p><div id="board" class="cards"></div><div class="row" style="margin-top:12px"><button id="guess" class="primary" disabled>🎯 Intentar adivinar</button><button id="restore" class="secondary">Restaurar tablero</button></div></section>
+<aside>
+<section class="panel"><h2>❓ Hacé una pregunta</h2><p class="muted">Cuando sea tu turno, elegí una pregunta. Tu rival responderá sí o no.</p><div id="questions" class="questions"></div><div id="incoming" class="hidden"><div class="notice" id="incomingText"></div><div class="row"><button id="answerYes" class="primary">Sí</button><button id="answerNo" class="secondary">No</button></div></div></section>
+<section class="panel"><h2>💬 Chat de la partida</h2><div id="chatlog" class="chatlog"></div><form id="chatForm" class="row"><input id="chatInput" class="input" maxlength="240" placeholder="Escribí un mensaje…"><button class="secondary" type="submit">Enviar</button></form></section>
+</aside>
+</div>
+<div id="endPanel" class="panel hidden"><h2 id="endTitle">Partida terminada</h2><div id="endText"></div><button id="again" class="primary" style="margin-top:10px">🔄 Jugar otra vez</button><button id="backLobby" class="secondary" style="margin-top:10px">Volver al inicio</button></div>
+</section>
+<div class="footer">Fan game no oficial. Imágenes y datos de Pokémon cargados desde PokéAPI. Requiere internet y un servidor Node.js para jugar online.</div>
+</main>
+<script>
+const socket=io();
+const API='https://pokeapi.co/api/v2';
+const ART='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/';
+const $=id=>document.getElementById(id);
+let myId=null, room=null, details=new Map(), secretChoice=null, mySecret=null, selectedGuess=null, eliminated=new Set(), pendingAnswer=null, boardLoaded=false, askedQuestion=false, finished=false;
+const pretty=s=>String(s||'').replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+const genFor=id=>id<=151?1:id<=251?2:id<=386?3:id<=493?4:id<=649?5:id<=721?6:id<=809?7:id<=905?8:9;
+function myPlayer(){return room?.players.find(p=>p.id===myId)}
+function opponent(){return room?.players.find(p=>p.id!==myId)}
+function notice(text,kind=''){ $('notice').textContent=text; $('notice').className='notice '+kind }
+function currentTurn(){return room?.turn===myId}
+function renderPlayers(){
+ $('players').innerHTML=(room?.players||[]).map(p=>`<div class="player ${room.turn===p.id?'active':''}"><b>${escapeHtml(p.name)}${p.id===myId?' (vos)':''}</b><br><span class="muted">${p.ready?'✅ Pokémon elegido': '⏳ Eligiendo Pokémon'}${room.turn===p.id&&room.phase==='playing'?' · Tu turno':''}</span></div>`).join('');
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function getPokemon(id){
+ if(details.has(id))return details.get(id);
+ const d=await (await fetch(`${API}/pokemon/${id}`)).json();
+ let species={};try{species=await (await fetch(d.species.url)).json()}catch(e){}
+ const p={id,name:d.name,types:d.types.map(x=>x.type.name),image:d.sprites.other?.['official-artwork']?.front_default||`${ART}${id}.png`,gen:genFor(id),evolves:!!species.evolves_from_species,legendary:!!(species.is_legendary||species.is_mythical)};
+ details.set(id,p);return p;
+}
+function card(p, mode='board'){
+ const isEliminated=mode==='board'&&eliminated.has(p.id);
+ const isSelected=mode==='secret'?secretChoice===p.id:selectedGuess===p.id;
+ return `<article class="card ${isEliminated?'eliminated':''} ${isSelected?'selected':''}" data-id="${p.id}" title="${mode==='secret'?'Elegir como secreto':'Descartar/seleccionar'}"><img loading="lazy" src="${p.image}" alt="${escapeHtml(p.name)}" onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png'"><div class="name">${escapeHtml(p.name)}</div><div class="num">N.º ${String(p.id).padStart(3,'0')}</div><div class="types">${p.types.map(pretty).join(' · ')}</div></article>`;
+}
+async function loadBoard(ids){
+ $('board').innerHTML='<p class="muted">Cargando Pokémon del tablero…</p>';
+ $('secretGrid').innerHTML='<p class="muted">Cargando Pokémon…</p>';
+ try{
+  const list=await Promise.all(ids.map(getPokemon)); boardLoaded=true;
+  $('board').innerHTML=list.map(p=>card(p)).join('');
+  $('secretGrid').innerHTML=list.map(p=>card(p,'secret')).join('');
+  updateBoard();
+ }catch(e){notice('No se pudieron cargar las imágenes/datos de Pokémon. Revisá la conexión y recargá.','bad')}
+}
+function updateBoard(){
+ $('remaining').textContent=`${room.boardIds.filter(id=>!eliminated.has(id)).length} candidatos`;
+ $('board').querySelectorAll('.card').forEach(c=>{const id=Number(c.dataset.id);c.classList.toggle('eliminated',eliminated.has(id));c.classList.toggle('selected',selectedGuess===id)});
+ $('secretGrid').querySelectorAll('.card').forEach(c=>c.classList.toggle('selected',secretChoice===Number(c.dataset.id)));
+ $('confirmSecret').disabled=!secretChoice;
+ $('guess').disabled=!room||room.phase!=='playing'||!currentTurn()||selectedGuess===null||!!room.pendingQuestion;
+}
+const questions=[
+ ['type:fire','¿Es de tipo Fuego?'],['type:water','¿Es de tipo Agua?'],['type:grass','¿Es de tipo Planta?'],['type:electric','¿Es de tipo Eléctrico?'],['type:psychic','¿Es de tipo Psíquico?'],['type:dragon','¿Es de tipo Dragón?'],['type:flying','¿Tiene tipo Volador?'],['type:ghost','¿Es de tipo Fantasma?'],['type:ice','¿Es de tipo Hielo?'],['type:dark','¿Es de tipo Siniestro?'],['type:poison','¿Es de tipo Veneno?'],['type:rock','¿Es de tipo Roca?'],['type:ground','¿Es de tipo Tierra?'],['type:fairy','¿Es de tipo Hada?'],['type:steel','¿Es de tipo Acero?'],['evolves','¿Puede evolucionar?'],['legendary','¿Es legendario o singular?'],...Array.from({length:9},(_,i)=>[`gen:${i+1}`,`¿Es de la generación ${i+1}?`])
+];
+function renderQuestions(){
+ $('questions').innerHTML=questions.map(([q,label])=>`<button data-question="${q}" data-label="${label}" ${!currentTurn()||room.phase!=='playing'||room.pendingQuestion?'disabled':''}>${label}</button>`).join('');
+}
+function updateRoom(){
+ if(!room)return;
+ $('lobby').classList.add('hidden');$('game').classList.remove('hidden');$('codeLabel').textContent=room.code;
+ renderPlayers();renderQuestions();
+ if(room.phase==='waiting'){
+  if(myPlayer()?.ready){$('secretPicker').classList.add('hidden');notice(room.players.length<2?'Pokémon secreto elegido. Compartí el código y esperá a tu rival.':'Esperando a que tu rival elija su Pokémon…')}
+  else{$('secretPicker').classList.remove('hidden');notice(room.players.length<2?'Sala creada. Compartí el código con tu amigo y elegí tu Pokémon secreto.':'Elegí tu Pokémon secreto para empezar.')}
+ } else if(room.phase==='playing'){
+  $('secretPicker').classList.add('hidden');
+  notice(room.pendingQuestion?(room.pendingQuestion.from===myId?'Pregunta enviada, esperando respuesta…':'¡Tu rival te hizo una pregunta! Respondé sí o no.'):(currentTurn()?'¡Es tu turno! Hacé una pregunta o intentá adivinar.':'Turno del rival. Esperá su pregunta o intento.'));
+ } else if(room.phase==='finished'){notice('Partida terminada.','good')}
+ updateBoard();
+}
+function enterGame(code){$('queueNotice').classList.add('hidden');$('lobby').classList.add('hidden');$('game').classList.remove('hidden');$('codeLabel').textContent=code}
+socket.on('connect',()=>{myId=socket.id});
+socket.on('room-created',({code})=>{enterGame(code);$('chatlog').innerHTML='';});
+socket.on('match-found',({code})=>{enterGame(code);$('chatlog').innerHTML='';});
+socket.on('room-state',async state=>{
+ const oldIds=room?.boardIds?.join(',');
+ room=state;
+ if(!boardLoaded||oldIds!==state.boardIds.join(',')){eliminated=new Set();selectedGuess=null;secretChoice=null;mySecret=null;boardLoaded=false;await loadBoard(state.boardIds)}
+ updateRoom();
+});
+socket.on('notice',t=>{if($('notice')&&!$('game').classList.contains('hidden'))notice(t)});
+socket.on('error-message',t=>alert(t));
+socket.on('queue-status',t=>{$('queueNotice').textContent=t;$('queueNotice').classList.remove('hidden')});
+socket.on('secret-confirmed',({id})=>{mySecret=id;$('secretPicker').classList.add('hidden');notice('Pokémon secreto confirmado. ¡No lo reveles!')});
+socket.on('incoming-question',q=>{
+ pendingAnswer=q;
+ $('incoming').classList.remove('hidden');
+ $('incomingText').textContent=`${q.from} pregunta: ${q.label}`;
+});
+socket.on('question-answer',({answer,label,by})=>{
+ notice(`${by} respondió ${answer?'SÍ ✅':'NO ❌'} a: ${label}`,answer?'good':'bad');
+ const q=questions.find(x=>x[1]===label);
+ if(q){
+  const matching=id=>{const p=details.get(id);if(!p)return false;const k=q[0];if(k.startsWith('type:'))return p.types.includes(k.split(':')[1]);if(k==='evolves')return p.evolves;if(k==='legendary')return p.legendary;if(k.startsWith('gen:'))return p.gen===Number(k.split(':')[1]);return false};
+  room.boardIds.forEach(id=>{if(matching(id)!==answer)eliminated.add(id)});
+  updateBoard();
+ }
+});
+socket.on('guess-result',({id})=>{notice(`No era ese Pokémon. Perdiste este intento y ahora le toca al rival.`, 'bad');eliminated.add(id);selectedGuess=null;updateBoard()});
+socket.on('game-over',({winner,won,secret})=>{
+ finished=true;$('endPanel').classList.remove('hidden');$('endTitle').textContent=won?'🏆 ¡Ganaste!':'😅 ¡Esta vez ganó tu rival!';
+ $('endText').innerHTML=`<p>${escapeHtml(winner)} ${won?'descubrió':'descubrió antes que vos'} el Pokémon secreto.</p><p>El Pokémon era <b>${pretty(secret.name)}</b> (N.º ${secret.id}).</p><img width="110" src="${ART}${secret.id}.png" alt="">`;
+ $('guess').disabled=true;renderQuestions();
+});
+socket.on('chat-message',({name,text,own})=>{const d=document.createElement('div');d.className='chatline';d.innerHTML=`<b>${own?'Vos':escapeHtml(name)}:</b> ${escapeHtml(text)}`;$('chatlog').appendChild(d);$('chatlog').scrollTop=$('chatlog').scrollHeight});
+$('create').onclick=()=>socket.emit('create-room',{name:$('playerName').value.trim()||'Entrenador'});
+$('join').onclick=()=>socket.emit('join-room',{code:$('roomCode').value,name:$('playerName').value.trim()||'Entrenador'});
+$('find').onclick=()=>{ $('queueNotice').textContent='Buscando rival…';$('queueNotice').classList.remove('hidden');socket.emit('find-public-game',{name:$('playerName').value.trim()||'Entrenador'})};
+$('roomCode').addEventListener('keydown',e=>{if(e.key==='Enter') $('join').click()});
+$('copyCode').onclick=async()=>{try{await navigator.clipboard.writeText(room.code);notice('Código copiado: '+room.code,'good')}catch(e){notice('Tu código de sala es: '+room.code)}};
+$('secretGrid').addEventListener('click',e=>{const c=e.target.closest('.card');if(!c||myPlayer()?.ready)return;secretChoice=Number(c.dataset.id);updateBoard()});
+$('confirmSecret').onclick=()=>{if(!secretChoice)return;const p=details.get(secretChoice);socket.emit('choose-secret',{id:p.id,pokemon:p})};
+$('board').addEventListener('click',e=>{const c=e.target.closest('.card');if(!c||room?.phase!=='playing')return;const id=Number(c.dataset.id);if(eliminated.has(id))eliminated.delete(id);else eliminated.add(id);selectedGuess=id;updateBoard()});
+$('restore').onclick=()=>{eliminated.clear();updateBoard()};
+$('questions').addEventListener('click',e=>{const b=e.target.closest('button[data-question]');if(!b||b.disabled)return;socket.emit('ask-question',{question:b.dataset.question,label:b.dataset.label});askedQuestion=true});
+$('answerYes').onclick=()=>{socket.emit('answer-question',{answer:true});$('incoming').classList.add('hidden');pendingAnswer=null};
+$('answerNo').onclick=()=>{socket.emit('answer-question',{answer:false});$('incoming').classList.add('hidden');pendingAnswer=null};
+$('guess').onclick=()=>{if(selectedGuess!==null)socket.emit('make-guess',{id:selectedGuess})};
+$('chatForm').onsubmit=e=>{e.preventDefault();const t=$('chatInput').value.trim();if(t){socket.emit('chat-message',{text:t});$('chatInput').value=''}};
+$('again').onclick=()=>{finished=false;$('endPanel').classList.add('hidden');socket.emit('play-again')};
+$('backLobby').onclick=()=>location.reload();
+</script>
+</body></html>
